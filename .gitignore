@@ -1,0 +1,6 @@
+node_modules
+dist
+*.XLS
+*.xls
+!tests/fixtures/*
+.env
