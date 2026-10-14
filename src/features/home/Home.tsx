@@ -1,11 +1,16 @@
 import { useI18n } from '../../i18n';
 import { useRepo } from '../../lib/repo/context';
+import { useInsights } from '../alerts/useInsights';
 
 export function Home() {
   const { t, date, dateTime, num } = useI18n();
   const repo = useRepo();
   const s = repo.stats();
   const owner = repo.user!.role === 'owner';
+  const ins = useInsights();
+  const urgent = ins.items.filter((i) => i.urgent).length;
+  const low = ins.items.filter((i) => i.low && !i.urgent).length;
+  const check = ins.items.filter((i) => i.check).length;
 
   return (
     <div className="stack">
@@ -38,6 +43,19 @@ export function Home() {
               <span className="muted small">{t('statReceipts')}</span>
             </div>
           </div>
+          <div className="card stack">
+            <h3>{t('alertSummary')}</h3>
+            {urgent + low + check === 0 ? (
+              <p className="muted">{t('allClear')}</p>
+            ) : (
+              <ul className="sum">
+                {urgent > 0 && <li className="neg">{t('tabUrgent')}: <b>{urgent}</b></li>}
+                {low > 0 && <li>{t('tabLow')}: <b>{low}</b></li>}
+                {check > 0 && <li>{t('tabCheck')}: <b>{check}</b></li>}
+              </ul>
+            )}
+            <a className="btn" href="#/alerts">{t('goAlerts')}</a>
+          </div>
           {owner && (s.heldOpen > 0 || s.mismatchOpen > 0) && (
             <div className="card">
               <h3>{t('needsAttention')}</h3>
@@ -54,9 +72,10 @@ export function Home() {
         </>
       )}
       {owner && (
-        <a className="btn ghost-btn" href="#/checks">
-          {t('systemCheck')}
-        </a>
+        <div className="row gap">
+          <a className="btn ghost-btn" href="#/settings">{t('goSettings')}</a>
+          <a className="btn ghost-btn" href="#/checks">{t('systemCheck')}</a>
+        </div>
       )}
     </div>
   );

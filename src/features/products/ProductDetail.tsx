@@ -1,10 +1,13 @@
+import { useState } from 'react';
 import { useI18n, type Key } from '../../i18n';
+import { useInsights } from '../alerts/useInsights';
 import { useRepo } from '../../lib/repo/context';
 
 export function ProductDetail({ id }: { id: string }) {
   const { t, num, date, dateTime } = useI18n();
   const repo = useRepo();
   const p = repo.getProduct(id);
+  const insights = useInsights();
   if (!p) {
     return (
       <div className="stack">
@@ -14,6 +17,8 @@ export function ProductDetail({ id }: { id: string }) {
     );
   }
   const moves = repo.movementsOf(p.id, 50);
+  const ins = insights.items.find((i) => i.product.id === p.id);
+  const owner = repo.user!.role === 'owner';
   return (
     <div className="stack">
       <a href="#/products">← {t('back')}</a>
@@ -34,6 +39,7 @@ export function ProductDetail({ id }: { id: string }) {
           <dd>{date(p.lastSaleAt)}</dd>
         </dl>
       </div>
+      <Adjust key={p.id} id={p.id} onHand={p.onHand} level={p.lowStockManual} auto={ins?.reorderPoint ?? null} owner={owner} />
       <h3>{t('recentMovements')}</h3>
       {moves.length === 0 && <p className="muted">{t('noMovements')}</p>}
       <ul className="list">
@@ -50,6 +56,81 @@ export function ProductDetail({ id }: { id: string }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function toInt(v: string): number | null {
+  return /^\d+$/.test(v.trim()) ? Number(v.trim()) : null;
+}
+
+function Adjust({ id, onHand, level, auto, owner }: { id: string; onHand: number; level: number | null; auto: number | null; owner: boolean }) {
+  const { t } = useI18n();
+  const repo = useRepo();
+  const [count, setCount] = useState(String(onHand));
+  const [wo, setWo] = useState('');
+  const [reason, setReason] = useState<'damaged' | 'lost' | 'other'>('damaged');
+  const [thr, setThr] = useState(level === null ? '' : String(level));
+  const [msg, setMsg] = useState<string | null>(null);
+  const run = async (fn: () => Promise<string | void>) => {
+    try {
+      setMsg((await fn()) ?? t('saved'));
+    } catch {
+      setMsg(t('invalidNumber'));
+    }
+  };
+  return (
+    <div className="stack">
+      <div className="card stack">
+        <h3>{t('countTitle')}</h3>
+        <label>
+          {t('countLabel')}
+          <input type="number" inputMode="numeric" min={0} value={count} onChange={(e) => setCount(e.target.value)} />
+        </label>
+        <button onClick={() => run(async () => {
+          const n = toInt(count);
+          if (n === null) throw new Error('bad');
+          const d = await repo.recordCount(id, n);
+          setCount(String(n));
+          return t('countDone', { diff: d > 0 ? `+${d}` : String(d) });
+        })}>{t('countSave')}</button>
+      </div>
+      <div className="card stack">
+        <h3>{t('writeOffTitle')}</h3>
+        <div className="seg">
+          {(['damaged', 'lost', 'other'] as const).map((r) => (
+            <button key={r} type="button" className={reason === r ? 'on' : ''} onClick={() => setReason(r)}>
+              {t(r === 'damaged' ? 'reasonDamaged' : r === 'lost' ? 'reasonLost' : 'reasonOther')}
+            </button>
+          ))}
+        </div>
+        <label>
+          {t('writeOffQty')}
+          <input type="number" inputMode="numeric" min={1} value={wo} onChange={(e) => setWo(e.target.value)} />
+        </label>
+        <button onClick={() => run(async () => {
+          const n = toInt(wo);
+          if (n === null || n === 0) throw new Error('bad');
+          await repo.recordWriteOff(id, n, reason);
+          setWo('');
+        })}>{t('writeOffSave')}</button>
+      </div>
+      {owner && (
+        <div className="card stack">
+          <h3>{t('thresholdTitle')}</h3>
+          <p className="muted small">{level === null ? `${t('thresholdAuto')}${auto !== null ? `: ${auto}` : ''}` : ''}</p>
+          <input type="number" inputMode="numeric" min={0} value={thr} placeholder={t('thresholdAuto')} onChange={(e) => setThr(e.target.value)} />
+          <div className="row gap">
+            <button className="primary" onClick={() => run(async () => {
+              const n = toInt(thr);
+              if (n === null) throw new Error('bad');
+              await repo.setLowStockManual(id, n);
+            })}>{t('thresholdSave')}</button>
+            <button onClick={() => run(async () => { await repo.setLowStockManual(id, null); setThr(''); })}>{t('thresholdClear')}</button>
+          </div>
+        </div>
+      )}
+      {msg && <p className="notice" role="status">{msg}</p>}
     </div>
   );
 }

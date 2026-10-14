@@ -11,6 +11,9 @@ import { Products } from './features/products/Products';
 import { ProductDetail } from './features/products/ProductDetail';
 import { Upload } from './features/pos-import/Upload';
 import { Checks } from './features/checks/Checks';
+import { Alerts } from './features/alerts/Alerts';
+import { ToOrder } from './features/order/ToOrder';
+import { Settings } from './features/settings/Settings';
 
 const SESSION_KEY = 'stock.session';
 
@@ -25,6 +28,9 @@ function Routes() {
   let page: JSX.Element;
   if (route.startsWith('/products/')) page = <ProductDetail id={decodeURIComponent(route.slice('/products/'.length))} />;
   else if (route === '/products') page = <Products />;
+  else if (route === '/alerts') page = <Alerts />;
+  else if (route === '/order') page = ownerOnly(<ToOrder />);
+  else if (route === '/settings') page = ownerOnly(<Settings />);
   else if (route === '/upload') page = ownerOnly(<Upload />);
   else if (route === '/checks') page = ownerOnly(<Checks />);
   else page = <Home />;

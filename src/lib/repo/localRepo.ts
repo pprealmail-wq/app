@@ -393,6 +393,72 @@ export class LocalRepo {
     this.emit();
   }
 
+  // ---------- hand corrections (owner and staff) ----------
+  private requireProduct(id: string): Product {
+    const p = this.s.products.find((x) => x.id === id);
+    if (!p) throw new Error('not_found');
+    return p;
+  }
+  private manualMove(p: Product, type: 'count_adjust' | 'write_off', quantity: number, reason: string, userId: string) {
+    const at = this.now();
+    this.s.movements.push({
+      id: this.uuid(), productId: p.id, type, quantity, source: 'manual', importId: null, receiptNo: null, lineNo: null,
+      posOpening: null, unitPrice: null, reason, occurredAt: at, createdBy: userId, createdAt: at,
+    });
+    p.onHand += quantity;
+    p.lastMovementAt = at;
+  }
+
+  /** Set stock to the number physically counted. Writes the difference as one movement. */
+  async recordCount(productId: string, counted: number): Promise<number> {
+    const user = this.assertLoggedIn();
+    if (!Number.isInteger(counted) || counted < 0) throw new Error('bad_quantity');
+    const p = this.requireProduct(productId);
+    const diff = counted - p.onHand;
+    if (diff !== 0) this.manualMove(p, 'count_adjust', diff, 'count', user.id);
+    this.audit(user.id, 'count', `${p.itemCode}: ${p.onHand - diff} -> ${counted}`);
+    await this.save();
+    this.emit();
+    return diff;
+  }
+
+  /** Remove damaged or lost goods from stock. */
+  async recordWriteOff(productId: string, qty: number, reason: 'damaged' | 'lost' | 'other'): Promise<void> {
+    const user = this.assertLoggedIn();
+    if (!Number.isInteger(qty) || qty <= 0) throw new Error('bad_quantity');
+    const p = this.requireProduct(productId);
+    this.manualMove(p, 'write_off', -qty, reason, user.id);
+    this.audit(user.id, 'write_off', `${p.itemCode}: -${qty} ${reason}`);
+    await this.save();
+    this.emit();
+  }
+
+  /** Owner sets (or clears) the level at which a product is warned about. */
+  async setLowStockManual(productId: string, level: number | null): Promise<void> {
+    const user = this.assertOwner();
+    if (level !== null && (!Number.isInteger(level) || level < 0)) throw new Error('bad_quantity');
+    const p = this.requireProduct(productId);
+    p.lowStockManual = level;
+    this.audit(user.id, 'set_threshold', `${p.itemCode}: ${level ?? 'auto'}`);
+    await this.save();
+    this.emit();
+  }
+
+  async updateSettings(patch: Partial<Settings>): Promise<void> {
+    const user = this.assertOwner();
+    const next = { ...this.s.settings };
+    for (const k of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
+      const v = patch[k];
+      if (v === undefined) continue;
+      if (!Number.isInteger(v) || v < (k === 'leadTimeDays' || k === 'safetyDays' ? 0 : 1) || v > 365) throw new Error('bad_setting');
+      next[k] = v;
+    }
+    this.s.settings = next;
+    this.audit(user.id, 'settings', JSON.stringify(patch));
+    await this.save();
+    this.emit();
+  }
+
   /** Remove all products, movements and imports (demo reset). Users and settings stay. */
   async clearData(): Promise<void> {
     const user = this.assertOwner();

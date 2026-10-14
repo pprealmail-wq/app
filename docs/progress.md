@@ -23,7 +23,7 @@ Last updated 2026-10-14
 | M2 Schema + rules + checks | Done | 16 checks pass |
 | M3 Main role screens | Partly | Home, search, detail. Alerts screens in M5 |
 | M4 POS upload (core) | Done | Real file: 83 receipts, 472 products, 0 held, 0 mismatches; re-upload adds nothing |
-| M5 Alerts, to-order, count, realtime | Not started | |
+| M5 Alerts, to-order, count, realtime | Mostly done | Alerts (4 lists + badge), to-order list with copy, count, write-off, manual reorder level, settings. Not done: realtime across phones, mark-as-ordered |
 | M6 PWA install + push | PWA done, push dropped | Manifest, service worker, icons. Not yet tested on real phones |
 | M7 Hardening | Not started | |
 
@@ -73,6 +73,12 @@ Last updated 2026-10-14
 - Generate the made-up demo product list from the real sales files.
 - Build M0–M4 first, then M5.
 - Update the deck: customer facts and the new solution (no expiry, no barcode, daily file upload).
+
+### Update 14 Oct (6 daily files, 28 Sep to 3 Oct)
+- All six files have identical columns. Imported in date order: 631 receipts, 972 products, 0 held lines, 0 negatives.
+- Each day's `CC_BEG` equals the previous day's closing stock: 1,848 repeat item-days compared, 0 mismatches. This confirms the opening-balance reading.
+- Made-up product list built: `demo/products_demo.xlsx` (and `.csv`), 972 real products plus 61 invented slow movers (codes D0001 to D0061). Both demo routes end with identical stock on the real products.
+- Still needed: more than 30 days of data to see slow-mover alerts on real data.
 
 ## Change log (decisions that changed the docs)
 

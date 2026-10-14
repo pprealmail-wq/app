@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useI18n, type Key } from '../i18n';
 import { useRepo } from '../lib/repo/context';
 import { navigate } from '../lib/router';
+import { alertCount, useInsights } from '../features/alerts/useInsights';
 
 interface Tab {
   path: string;
@@ -13,6 +14,8 @@ interface Tab {
 const TABS: Tab[] = [
   { path: '/', label: 'navHome', icon: '⌂' },
   { path: '/products', label: 'navProducts', icon: '☰' },
+  { path: '/alerts', label: 'navAlerts', icon: '⚠' },
+  { path: '/order', label: 'navOrder', icon: '✎', owner: true },
   { path: '/upload', label: 'navUpload', icon: '⇪', owner: true },
 ];
 
@@ -20,6 +23,7 @@ export function Layout({ route, children }: { route: string; children: ReactNode
   const { t, lang, setLang } = useI18n();
   const repo = useRepo();
   const user = repo.user!;
+  const badge = alertCount(useInsights());
   const tabs = TABS.filter((x) => !x.owner || user.role === 'owner');
   const active = (p: string) => (p === '/' ? route === '/' : route.startsWith(p));
 
@@ -44,7 +48,10 @@ export function Layout({ route, children }: { route: string; children: ReactNode
       <nav className="bottom">
         {tabs.map((x) => (
           <a key={x.path} href={`#${x.path}`} className={active(x.path) ? 'on' : ''} onClick={() => navigate(x.path)}>
-            <span className="ic">{x.icon}</span>
+            <span className="ic">
+              {x.icon}
+              {x.path === '/alerts' && badge > 0 && <b className="badge">{badge > 99 ? '99+' : badge}</b>}
+            </span>
             {t(x.label)}
           </a>
         ))}

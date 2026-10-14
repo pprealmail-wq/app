@@ -6,12 +6,13 @@ export function Products() {
   const { t, num } = useI18n();
   const repo = useRepo();
   const [q, setQ] = useState('');
+  const [limit, setLimit] = useState(100);
   const dq = useDeferredValue(q);
-  const { items, total } = repo.searchProducts(dq, 100);
+  const { items, total } = repo.searchProducts(dq, limit);
 
   return (
     <div className="stack">
-      <input type="search" className="search" placeholder={t('searchPlaceholder')} value={q} onChange={(e) => setQ(e.target.value)} />
+      <input type="search" className="search" placeholder={t('searchPlaceholder')} value={q} onChange={(e) => { setQ(e.target.value); setLimit(100); }} />
       <p className="muted small">{t('showing', { n: items.length, total })}</p>
       {items.length === 0 && <p className="center muted">{t('notFound')}</p>}
       <ul className="list">
@@ -33,6 +34,7 @@ export function Products() {
           </li>
         ))}
       </ul>
+      {total > items.length && <button onClick={() => setLimit(limit + 100)}>{t('showMore')}</button>}
     </div>
   );
 }
