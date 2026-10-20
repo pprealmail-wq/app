@@ -1,5 +1,7 @@
 # AGENTS.md — Standing rules for the AI
 
+> **Status 20 Oct:** the shared database is built and tested (`supabase/`). It turns on when the build has `SUPABASE_URL` and `SUPABASE_ANON_KEY`; without them the app keeps data on each device. Realtime is done by checking a version number every 10 seconds, not by Supabase Realtime. Edge Functions and push are not built. See `supabase/SETUP.md`.
+
 Paste this into System Instructions at the start of every AI Studio session. Project: Stock Manager for Rungruangpanich (see prd.md). Version 0.2.
 
 ## Source of truth

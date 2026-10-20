@@ -16,8 +16,11 @@ npm run dev       # http://localhost:5173
 ## Demo logins
 Owner PIN `1111` (upload, review, reset). Staff PIN `2222` (search and view only).
 
+## Shared database (optional)
+Set `SUPABASE_URL` and `SUPABASE_ANON_KEY` (GitHub repository variables) and the app shares data across phones with real owner/staff rules enforced by the database. Steps: `supabase/SETUP.md`. Without them, data stays on each device.
+
 ## Current limits
-- Data is stored on this device only (IndexedDB). Shared database for several phones is the next step (`src/lib/repo/localRepo.ts` is the single place to swap).
+- Without the Supabase variables, data is stored on this device only (IndexedDB).
 - No push notifications. Alerts, to-order list, count and write-off (M5) are not built yet.
 - Never commit real POS files (`.gitignore` blocks .xls).
 

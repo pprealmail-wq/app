@@ -8,18 +8,18 @@ export function Login() {
   const users = repo.loginUsers();
   const [userId, setUserId] = useState(users[0]?.id ?? '');
   const [pin, setPin] = useState('');
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<'pin' | 'other' | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
-    setError(false);
+    setError(null);
     try {
       await repo.login(userId, pin);
       location.hash = '/';
-    } catch {
-      setError(true);
+    } catch (e) {
+      setError(e instanceof Error && e.message === 'wrong_pin' ? 'pin' : 'other');
       setPin('');
     }
     setBusy(false);
@@ -43,14 +43,18 @@ export function Login() {
           ))}
         </div>
         <label>
-          {t('pin')}
-          <input type="password" inputMode="numeric" autoComplete="off" maxLength={8} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} />
+          {repo.isRemote ? t('password') : t('pin')}
+          {repo.isRemote ? (
+            <input type="password" autoComplete="current-password" maxLength={72} value={pin} onChange={(e) => setPin(e.target.value)} />
+          ) : (
+            <input type="password" inputMode="numeric" autoComplete="off" maxLength={8} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} />
+          )}
         </label>
-        {error && <p className="notice warn" role="alert">{t('wrongPin')}</p>}
-        <button className="primary" disabled={busy || pin.length < 4}>
+        {error && <p className="notice warn" role="alert">{error === 'pin' ? (repo.isRemote ? t('wrongPassword') : t('wrongPin')) : t('err_other')}</p>}
+        <button className="primary" disabled={busy || pin.length < (repo.isRemote ? 6 : 4)}>
           {t('loginButton')}
         </button>
-        <p className="muted small">{t('demoHint')}</p>
+        <p className="muted small">{repo.isRemote ? t('remoteHint') : t('demoHint')}</p>
       </form>
     </div>
   );

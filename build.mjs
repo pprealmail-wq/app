@@ -19,7 +19,7 @@ const opts = {
   jsx: 'automatic',
   minify: !watch,
   sourcemap: watch,
-  define: { __PROD__: String(!watch), 'process.env.NODE_ENV': JSON.stringify(watch ? 'development' : 'production'), __VERSION__: JSON.stringify(version) },
+  define: { __SUPABASE_URL__: JSON.stringify(process.env.SUPABASE_URL ?? ''), __SUPABASE_ANON_KEY__: JSON.stringify(process.env.SUPABASE_ANON_KEY ?? ''), __PROD__: String(!watch), 'process.env.NODE_ENV': JSON.stringify(watch ? 'development' : 'production'), __VERSION__: JSON.stringify(version) },
   logLevel: 'info',
 };
 

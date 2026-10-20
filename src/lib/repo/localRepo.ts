@@ -17,7 +17,11 @@ import {
   type Settings,
   type User,
 } from '../rules/types';
+import type { Change, Remote } from './change';
+import { ForbiddenError } from './errors';
 import type { KV } from './kv';
+
+export { ForbiddenError };
 
 interface DbState {
   v: 1;
@@ -32,11 +36,6 @@ interface DbState {
   settings: Settings;
 }
 
-export class ForbiddenError extends Error {
-  constructor() {
-    super('forbidden');
-  }
-}
 
 export interface Stats {
   products: number;
@@ -74,10 +73,24 @@ export class LocalRepo {
     private kv: KV,
     private now: () => string = nowBangkok,
     private uuid: () => string = () => crypto.randomUUID(),
+    private remote: Remote | null = null,
   ) {}
 
   // ---------- lifecycle ----------
+  private emptyState(): DbState {
+    return { v: 1, users: [], products: [], movements: [], receipts: [], imports: [], held: [], mismatches: [], audit: [], settings: { ...DEFAULT_SETTINGS } };
+  }
+
+  /** True when data lives in the shared database instead of this device. */
+  get isRemote(): boolean {
+    return this.remote !== null;
+  }
+
   async init(): Promise<void> {
+    if (this.remote) {
+      this.s = this.emptyState();
+      return;
+    }
     const raw = await this.kv.get('db');
     if (raw) {
       try {
@@ -110,12 +123,26 @@ export class LocalRepo {
 
   // ---------- auth ----------
   loginUsers(): LoginUser[] {
+    if (this.remote) return [...this.remote.logins];
     return this.s.users.filter((u) => u.isActive).map((u) => ({ id: u.id, name: u.name, role: u.role }));
   }
   get user(): User | null {
     return this.session;
   }
   async login(userId: string, pin: string): Promise<User> {
+    if (this.remote) {
+      const u = await this.remote.login(userId, pin);
+      this.session = u;
+      try {
+        await this.reload();
+      } catch (e) {
+        this.logout();
+        throw e;
+      }
+      this.startSync();
+      this.emit();
+      return u;
+    }
     const u = this.s.users.find((x) => x.id === userId && x.isActive);
     if (!u || u.pinHash !== (await sha256(`${userId}:${pin}`))) throw new Error('wrong_pin');
     this.session = u;
@@ -127,8 +154,25 @@ export class LocalRepo {
     this.session = u ?? null;
     this.emit();
   }
+  /** Shared mode: pick up a saved sign-in. Returns true when the person is signed in again. */
+  async resume(): Promise<boolean> {
+    if (!this.remote) return false;
+    const u = await this.remote.resume();
+    if (!u) return false;
+    this.session = u;
+    await this.reload();
+    this.startSync();
+    this.emit();
+    return true;
+  }
+
   logout(): void {
     this.session = null;
+    if (this.remote) {
+      this.remote.logout();
+      this.stopSync();
+      this.s = this.emptyState();
+    }
     this.emit();
   }
   private assertLoggedIn(): User {
@@ -140,8 +184,67 @@ export class LocalRepo {
     if (u.role !== 'owner') throw new ForbiddenError();
     return u;
   }
-  private audit(userId: string, action: string, detail: string) {
-    this.s.audit.push({ id: this.uuid(), userId, action, detail, createdAt: this.now() });
+  private audit(userId: string, action: string, detail: string): AuditRec {
+    const rec: AuditRec = { id: this.uuid(), userId, action, detail, createdAt: this.now() };
+    this.s.audit.push(rec);
+    return rec;
+  }
+
+  // ---------- shared database ----------
+  private syncVersion = -1;
+  private timer: ReturnType<typeof setInterval> | null = null;
+
+  private async reload(): Promise<void> {
+    const r = await this.remote!.loadAll();
+    this.s = { v: 1, users: r.users, products: r.products, movements: r.movements, receipts: r.receipts, imports: r.imports, held: r.held, mismatches: r.mismatches, audit: [], settings: r.settings };
+    this.syncVersion = r.version;
+  }
+
+  /** Stores one change: on this device, or in the shared database (all or nothing). If the database refuses, the screen goes back to what it holds. */
+  private async persist(change: Change): Promise<void> {
+    if (!this.remote) {
+      await this.save();
+      return;
+    }
+    try {
+      this.syncVersion = await this.remote.write(change);
+    } catch (e) {
+      try {
+        await this.reload();
+      } catch {
+        /* offline: keep what is on screen */
+      }
+      this.emit();
+      throw e;
+    }
+  }
+
+  private startSync() {
+    if (!this.remote || this.timer) return;
+    const tick = async () => {
+      if (!this.session || !this.remote) return;
+      try {
+        const v = await this.remote.version();
+        if (v !== this.syncVersion) {
+          await this.reload();
+          this.emit();
+        }
+      } catch {
+        /* offline or signed out: try again next time */
+      }
+    };
+    this.timer = setInterval(tick, 10_000);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => void (document.visibilityState === 'visible' && tick()));
+  }
+  private stopSync() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+  /** Check for other people's changes now (used by tests and by the refresh button). */
+  async refresh(): Promise<void> {
+    if (!this.remote || !this.session) return;
+    await this.reload();
+    this.emit();
   }
 
   // ---------- reads ----------
@@ -289,14 +392,20 @@ export class LocalRepo {
     }
     for (const u of plan.priceUpdates) byCode.get(u.itemCode)!.sellPrice = u.sellPrice;
     this.s.movements.push(...movements);
-    for (const r of plan.receiptsNew) this.s.receipts.push({ ...r, importId });
-    for (const h of plan.held) this.s.held.push({ id: this.uuid(), importId, receiptNo: h.receiptNo, itemCode: h.itemCode, nameTh: h.nameTh, qty: h.qty, reason: h.reason, resolved: false });
-    for (const m of plan.mismatches) {
-      this.s.mismatches.push({ id: this.uuid(), importId, productId: byCode.get(m.itemCode)!.id, itemCode: m.itemCode, nameTh: m.nameTh, appBefore: m.appBefore, posOpening: m.posOpening, resolved: false });
-    }
+    const receipts: Receipt[] = plan.receiptsNew.map((r) => ({ ...r, importId }));
+    this.s.receipts.push(...receipts);
+    const heldRecs: HeldRec[] = plan.held.map((h) => ({ id: this.uuid(), importId, receiptNo: h.receiptNo, itemCode: h.itemCode, nameTh: h.nameTh, qty: h.qty, reason: h.reason, resolved: false }));
+    this.s.held.push(...heldRecs);
+    const mismatchRecs: MismatchRec[] = plan.mismatches.map((m) => ({ id: this.uuid(), importId, productId: byCode.get(m.itemCode)!.id, itemCode: m.itemCode, nameTh: m.nameTh, appBefore: m.appBefore, posOpening: m.posOpening, resolved: false }));
+    this.s.mismatches.push(...mismatchRecs);
     this.s.imports.push(record);
-    this.audit(user.id, 'pos_import', `${filename}: ${record.receiptsNew} new receipts, ${record.receiptsSkipped} skipped, ${record.productsCreated} products created, ${record.heldLines} held`);
-    await this.save();
+    const auditRec = this.audit(user.id, 'pos_import', `${filename}: ${record.receiptsNew} new receipts, ${record.receiptsSkipped} skipped, ${record.productsCreated} products created, ${record.heldLines} held`);
+    const touched = new Map<string, Product>(created.map((p) => [p.id, p]));
+    for (const u of plan.priceUpdates) {
+      const p = byCode.get(u.itemCode)!;
+      touched.set(p.id, p);
+    }
+    await this.persist({ imports: [record], products: [...touched.values()], receipts, movements, held: heldRecs, mismatches: mismatchRecs, audit: [auditRec] });
     this.emit();
     return { record, plan };
   }
@@ -316,6 +425,8 @@ export class LocalRepo {
     const plan = planProductList(parse, this.existingFields());
     const at = this.now();
     const importId = this.uuid();
+    const createdList: Product[] = [];
+    const openings: Movement[] = [];
     for (const r of plan.toCreate) {
       const p: Product = {
         id: this.uuid(),
@@ -333,22 +444,25 @@ export class LocalRepo {
         isActive: true,
       };
       this.s.products.push(p);
+      createdList.push(p);
       if (p.onHand !== 0) {
-        this.s.movements.push({
+        const mv: Movement = {
           id: this.uuid(), productId: p.id, type: 'opening', quantity: p.onHand, source: 'product_list', importId, receiptNo: null, lineNo: null,
           posOpening: null, unitPrice: null, reason: null, occurredAt: '1970-01-01T00:00:00', createdBy: user.id, createdAt: at,
-        });
+        };
+        this.s.movements.push(mv);
+        openings.push(mv);
       }
     }
     const byCode = new Map(this.s.products.map((p) => [p.itemCode, p]));
-    for (const u of plan.toUpdate) Object.assign(byCode.get(u.itemCode)!, u.changes);
+    const edited = plan.toUpdate.map((u) => Object.assign(byCode.get(u.itemCode)!, u.changes));
     const record: ImportRec = {
       id: importId, filename, kind: 'productList', dateFrom: null, dateTo: null, lineCount: parse.rows.length + parse.invalid.length,
       receiptsNew: 0, receiptsSkipped: 0, productsCreated: plan.toCreate.length, heldLines: plan.invalid.length, mismatchCount: 0, uploadedBy: user.id, createdAt: at,
     };
     this.s.imports.push(record);
-    this.audit(user.id, 'product_list_import', `${filename}: ${plan.toCreate.length} created, ${plan.toUpdate.length} updated`);
-    await this.save();
+    const auditRec = this.audit(user.id, 'product_list_import', `${filename}: ${plan.toCreate.length} created, ${plan.toUpdate.length} updated`);
+    await this.persist({ imports: [record], products: [...createdList, ...edited], movements: openings, audit: [auditRec] });
     this.emit();
     return { record, plan };
   }
@@ -360,17 +474,50 @@ export class LocalRepo {
     const p = m ? this.s.products.find((x) => x.id === m.productId) : undefined;
     if (!m || !p) return;
     const diff = m.posOpening - m.appBefore;
+    const moves: Movement[] = [];
     if (diff !== 0) {
       p.onHand += diff;
-      this.s.movements.push({
+      const mv: Movement = {
         id: this.uuid(), productId: p.id, type: 'count_adjust', quantity: diff, source: 'manual', importId: m.importId, receiptNo: null, lineNo: null,
         posOpening: m.posOpening, unitPrice: null, reason: 'accept_pos_opening', occurredAt: this.now(), createdBy: user.id, createdAt: this.now(),
-      });
+      };
+      this.s.movements.push(mv);
+      moves.push(mv);
     }
     m.resolved = true;
-    this.audit(user.id, 'accept_pos_opening', `${p.itemCode}: ${diff >= 0 ? '+' : ''}${diff}`);
-    await this.save();
+    const auditRec = this.audit(user.id, 'accept_pos_opening', `${p.itemCode}: ${diff >= 0 ? '+' : ''}${diff}`);
+    await this.persist({ movements: moves, mismatches: [m], audit: [auditRec] });
     this.emit();
+  }
+
+  /** Use the POS opening balance for every open mismatch in one step. Returns how many products changed. */
+  async acceptAllMismatches(): Promise<number> {
+    const user = this.assertOwner();
+    const at = this.now();
+    let changed = 0;
+    const moves: Movement[] = [];
+    const resolvedRecs: MismatchRec[] = [];
+    for (const m of this.s.mismatches) {
+      if (m.resolved) continue;
+      const p = this.s.products.find((x) => x.id === m.productId);
+      m.resolved = true;
+      resolvedRecs.push(m);
+      if (!p) continue;
+      const diff = m.posOpening - m.appBefore;
+      if (diff === 0) continue;
+      p.onHand += diff;
+      const mv: Movement = {
+        id: this.uuid(), productId: p.id, type: 'count_adjust', quantity: diff, source: 'manual', importId: m.importId, receiptNo: null, lineNo: null,
+        posOpening: m.posOpening, unitPrice: null, reason: 'accept_pos_opening', occurredAt: at, createdBy: user.id, createdAt: at,
+      };
+      this.s.movements.push(mv);
+      moves.push(mv);
+      changed++;
+    }
+    const auditRec = this.audit(user.id, 'accept_all_pos_opening', `${changed} products adjusted`);
+    await this.persist({ movements: moves, mismatches: resolvedRecs, audit: [auditRec] });
+    this.emit();
+    return changed;
   }
 
   async ignoreMismatch(id: string): Promise<void> {
@@ -378,8 +525,8 @@ export class LocalRepo {
     const m = this.s.mismatches.find((x) => x.id === id);
     if (!m) return;
     m.resolved = true;
-    this.audit(user.id, 'ignore_mismatch', m.itemCode);
-    await this.save();
+    const auditRec = this.audit(user.id, 'ignore_mismatch', m.itemCode);
+    await this.persist({ mismatches: [m], audit: [auditRec] });
     this.emit();
   }
 
@@ -388,8 +535,8 @@ export class LocalRepo {
     const h = this.s.held.find((x) => x.id === id);
     if (!h) return;
     h.resolved = true;
-    this.audit(user.id, 'dismiss_held', `${h.receiptNo} ${h.itemCode}`);
-    await this.save();
+    const auditRec = this.audit(user.id, 'dismiss_held', `${h.receiptNo} ${h.itemCode}`);
+    await this.persist({ held: [h], audit: [auditRec] });
     this.emit();
   }
 
@@ -399,14 +546,16 @@ export class LocalRepo {
     if (!p) throw new Error('not_found');
     return p;
   }
-  private manualMove(p: Product, type: 'count_adjust' | 'write_off', quantity: number, reason: string, userId: string) {
+  private manualMove(p: Product, type: 'count_adjust' | 'write_off', quantity: number, reason: string, userId: string): Movement {
     const at = this.now();
-    this.s.movements.push({
+    const mv: Movement = {
       id: this.uuid(), productId: p.id, type, quantity, source: 'manual', importId: null, receiptNo: null, lineNo: null,
       posOpening: null, unitPrice: null, reason, occurredAt: at, createdBy: userId, createdAt: at,
-    });
+    };
+    this.s.movements.push(mv);
     p.onHand += quantity;
     p.lastMovementAt = at;
+    return mv;
   }
 
   /** Set stock to the number physically counted. Writes the difference as one movement. */
@@ -415,9 +564,9 @@ export class LocalRepo {
     if (!Number.isInteger(counted) || counted < 0) throw new Error('bad_quantity');
     const p = this.requireProduct(productId);
     const diff = counted - p.onHand;
-    if (diff !== 0) this.manualMove(p, 'count_adjust', diff, 'count', user.id);
-    this.audit(user.id, 'count', `${p.itemCode}: ${p.onHand - diff} -> ${counted}`);
-    await this.save();
+    const mv = diff !== 0 ? this.manualMove(p, 'count_adjust', diff, 'count', user.id) : null;
+    const auditRec = this.audit(user.id, 'count', `${p.itemCode}: ${p.onHand - diff} -> ${counted}`);
+    await this.persist({ movements: mv ? [mv] : [], audit: [auditRec] });
     this.emit();
     return diff;
   }
@@ -427,9 +576,9 @@ export class LocalRepo {
     const user = this.assertLoggedIn();
     if (!Number.isInteger(qty) || qty <= 0) throw new Error('bad_quantity');
     const p = this.requireProduct(productId);
-    this.manualMove(p, 'write_off', -qty, reason, user.id);
-    this.audit(user.id, 'write_off', `${p.itemCode}: -${qty} ${reason}`);
-    await this.save();
+    const mv = this.manualMove(p, 'write_off', -qty, reason, user.id);
+    const auditRec = this.audit(user.id, 'write_off', `${p.itemCode}: -${qty} ${reason}`);
+    await this.persist({ movements: [mv], audit: [auditRec] });
     this.emit();
   }
 
@@ -439,8 +588,8 @@ export class LocalRepo {
     if (level !== null && (!Number.isInteger(level) || level < 0)) throw new Error('bad_quantity');
     const p = this.requireProduct(productId);
     p.lowStockManual = level;
-    this.audit(user.id, 'set_threshold', `${p.itemCode}: ${level ?? 'auto'}`);
-    await this.save();
+    const auditRec = this.audit(user.id, 'set_threshold', `${p.itemCode}: ${level ?? 'auto'}`);
+    await this.persist({ products: [p], audit: [auditRec] });
     this.emit();
   }
 
@@ -454,8 +603,8 @@ export class LocalRepo {
       next[k] = v;
     }
     this.s.settings = next;
-    this.audit(user.id, 'settings', JSON.stringify(patch));
-    await this.save();
+    const auditRec = this.audit(user.id, 'settings', JSON.stringify(patch));
+    await this.persist({ settings: next, audit: [auditRec] });
     this.emit();
   }
 
@@ -468,8 +617,8 @@ export class LocalRepo {
     this.s.imports = [];
     this.s.held = [];
     this.s.mismatches = [];
-    this.audit(user.id, 'clear_data', 'all products, movements and imports removed');
-    await this.save();
+    const auditRec = this.audit(user.id, 'clear_data', 'all products, movements and imports removed');
+    await this.persist({ clearAll: true, audit: [auditRec] });
     this.emit();
   }
 }

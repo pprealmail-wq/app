@@ -16,6 +16,14 @@ export function Review() {
       {mism.length > 0 && (
         <div className="card stack">
           <h4>{t('mismatchTitle')}</h4>
+          <button
+            className="primary"
+            onClick={() => {
+              if (confirm(t('acceptAllConfirm', { n: mism.length }))) void repo.acceptAllMismatches();
+            }}
+          >
+            {t('acceptAll', { n: mism.length })}
+          </button>
           <ul className="list">
             {mism.slice(0, MAX).map((m) => (
               <li key={m.id} className="rev">

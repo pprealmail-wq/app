@@ -74,3 +74,21 @@ test('owner can change settings; bad values are rejected', async () => {
   await assert.rejects(() => repo.updateSettings({ historyDays: 0 }));
   await assert.rejects(() => repo.updateSettings({ leadTimeDays: 1.5 }));
 });
+
+test('accept all POS openings in one step', async () => {
+  const repo = new LocalRepo(new MemoryKV());
+  await repo.init();
+  await repo.login('owner', '1111');
+  const line = (code: string, no: string, opening: number) => ({ seq: 0, rowNo: 2, receiptNo: no, itemCode: code, nameTh: code, unitName: 'ลัง', category: null, qty: 1, sign: -1 as const, posOpening: opening, unitPrice: null, occurredAt: '2026-10-02T10:00:00' });
+  await repo.applyPos({ lines: [line('1', 'ORCM1', 10), line('2', 'ORCM2', 20)], held: [] }, { useOpeningFromPos: true }, 'day1');
+  // day 2 says the openings were 12 and 18 instead of 9 and 19
+  const r = await repo.applyPos({ lines: [{ ...line('1', 'ORCM3', 12), occurredAt: '2026-10-03T10:00:00' }, { ...line('2', 'ORCM4', 18), occurredAt: '2026-10-03T10:00:00' }], held: [] }, { useOpeningFromPos: true }, 'day2');
+  assert.equal(r.plan.mismatches.length, 2);
+  assert.equal(await repo.acceptAllMismatches(), 2);
+  assert.equal(repo.mismatchesOpen().length, 0);
+  const by = Object.fromEntries(repo.products().map((p) => [p.itemCode, p.onHand]));
+  assert.deepEqual(by, { '1': 11, '2': 17 }); // opening 12 / 18, then sold 1 each
+  repo.logout();
+  await repo.login('staff', '2222');
+  await assert.rejects(() => repo.acceptAllMismatches());
+});

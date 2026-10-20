@@ -16,6 +16,7 @@ const TABS: Tab[] = [
   { path: '/products', label: 'navProducts', icon: '☰' },
   { path: '/alerts', label: 'navAlerts', icon: '⚠' },
   { path: '/order', label: 'navOrder', icon: '✎', owner: true },
+  { path: '/analyze', label: 'navAnalyze', icon: '▤', owner: true },
   { path: '/upload', label: 'navUpload', icon: '⇪', owner: true },
 ];
 

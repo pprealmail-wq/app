@@ -187,7 +187,7 @@ export function Upload() {
         <button
           className="danger"
           onClick={() => {
-            if (confirm(t('clearConfirm'))) void repo.clearData().then(reset);
+            if (confirm(repo.isRemote ? t('clearConfirmShared') : t('clearConfirm'))) void repo.clearData().then(reset);
           }}
         >
           {t('clearData')}

@@ -71,6 +71,7 @@ export function Home() {
           </a>
         </>
       )}
+      <p className="muted small center">{repo.isRemote ? t('sharedData') : t('localData')}</p>
       {owner && (
         <div className="row gap">
           <a className="btn ghost-btn" href="#/settings">{t('goSettings')}</a>
