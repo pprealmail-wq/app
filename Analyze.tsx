@@ -40,7 +40,6 @@ export function Analyze() {
   const maxDay = Math.max(1, ...a.daily.map((d) => Math.max(d.sold, d.received)));
   const maxCat = a.categories.length ? a.categories[0].cases : 1;
   const net = a.totalSold - a.totalReceived;
-  const short = a.days < repo.settings().slowMoverDays;
 
   return (
     <div className="stack">
@@ -136,24 +135,6 @@ export function Analyze() {
           ))}
         </ul>
         <p className="muted small">{t(net > 0 ? 'anNetDown' : 'anNetUp', { n: num(Math.abs(net)) })}</p>
-      </section>
-
-      <section className="stack">
-        <h3>{t('anDead', { n: a.dead.length })}</h3>
-        <p className="muted small">{t('anDeadHelp')}</p>
-        {short && <p className="notice warn">{t('anShortData', { n: a.days })}</p>}
-        <ul className="list">
-          {a.dead.slice(0, 10).map((d) => (
-            <li key={d.product.id} className="an">
-              <a href={`#/products/${encodeURIComponent(d.product.id)}`}>
-                <div className="anrow">
-                  <span>{d.product.nameTh}</span>
-                  <span className="chip warn">{t('anLeftN', { n: num(d.onHand) })}</span>
-                </div>
-              </a>
-            </li>
-          ))}
-        </ul>
       </section>
 
       <section className="stack">

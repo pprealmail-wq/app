@@ -122,4 +122,4 @@ Last updated 2026-10-14
 | — | — | — | — |
 
 ## Update 21 Oct — Sales analysis tab (owner only)
-New `/analyze` tab built from existing movements (no new tables, schema unchanged): best sellers (by cases / by receipts), days of stock left, daily sold vs received, stuck stock (stock but no sales), best categories. Logic in `src/lib/rules/analytics.ts` with tests in `tests/analytics.test.ts`. Limits: data covers only the uploaded days; stuck-stock is a hint until about 30 days of data; no revenue/profit view (prices are missing on about half of sale lines, no cost data).
+New `/analyze` tab built from existing movements (no new tables, schema unchanged): best sellers (by cases / by receipts), days of stock left, daily sold vs received, best categories. Logic in `src/lib/rules/analytics.ts` with tests in `tests/analytics.test.ts`. Limits: data covers only the uploaded days; the stuck-stock view was removed on 21 Oct; no revenue/profit view (prices are missing on about half of sale lines, no cost data).

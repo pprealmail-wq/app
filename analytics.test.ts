@@ -12,7 +12,7 @@ const mv = (productId: string, type: Movement['type'], qty: number, day: string,
   receiptNo, lineNo: 1, posOpening: null, unitPrice: null, reason: null, occurredAt: `${day}T10:00:00`, createdBy: 'o', createdAt: '',
 });
 
-test('analytics: best sellers, categories, daily, dead stock', () => {
+test('analytics: best sellers, categories, daily', () => {
   const products = [prod('A', 5, 'c1'), prod('B', 9, 'c2'), prod('C', 40, 'c2')];
   const m = [
     mv('A', 'sale', 10, '2026-10-01', 'R1'),
@@ -28,7 +28,6 @@ test('analytics: best sellers, categories, daily, dead stock', () => {
   assert.deepEqual(a.products.map((p) => [p.product.id, p.cases, p.receipts]), [['A', 12, 2], ['B', 6, 1]]);
   assert.deepEqual(a.categories.map((c) => [c.category, c.cases]), [['c1', 12], ['c2', 6]]);
   assert.deepEqual(a.daily, [{ date: '2026-10-01', sold: 16, received: 0 }, { date: '2026-10-02', sold: 2, received: 20 }]);
-  assert.deepEqual(a.dead.map((d) => d.product.id), ['C']);
 });
 
 test('analytics: empty data', () => {

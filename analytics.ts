@@ -16,10 +16,6 @@ export interface CategoryRow {
   category: string | null;
   cases: number;
 }
-export interface DeadStock {
-  product: Product;
-  onHand: number;
-}
 export interface Analytics {
   days: number; // days that have any sale or delivery
   from: string | null;
@@ -29,7 +25,6 @@ export interface Analytics {
   products: ProductSales[]; // sold at least once, best first (by cases)
   categories: CategoryRow[]; // best first
   daily: DayRow[]; // oldest first
-  dead: DeadStock[]; // stock on hand but never sold, most stock first
 }
 
 export function computeAnalytics(products: readonly Product[], movements: readonly Movement[]): Analytics {
@@ -69,10 +64,6 @@ export function computeAnalytics(products: readonly Product[], movements: readon
   list.sort((a, b) => b.cases - a.cases || a.product.nameTh.localeCompare(b.product.nameTh, 'th'));
 
   const daily = [...day.values()].sort((a, b) => a.date.localeCompare(b.date));
-  const dead = products
-    .filter((p) => p.isActive && p.onHand > 0 && !sold.has(p.id))
-    .map((p) => ({ product: p, onHand: p.onHand }))
-    .sort((a, b) => b.onHand - a.onHand);
 
   return {
     days: daily.length,
@@ -83,6 +74,5 @@ export function computeAnalytics(products: readonly Product[], movements: readon
     products: list,
     categories: [...cat].map(([category, cases]) => ({ category, cases })).sort((a, b) => b.cases - a.cases),
     daily,
-    dead,
   };
 }
