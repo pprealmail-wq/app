@@ -1,27 +1,12 @@
-# Store Stock Manager (สต็อกร้าน)
+# Demo data (made up)
 
-PWA for รุ่งเรืองพานิช: upload the daily POS file, stock updates (sales subtract, deliveries add).
-Runs on Android and iOS (add to home screen). Thai first, English toggle.
+`products_demo.xlsx` / `.csv` is a made-up product list, not the store's real stock list.
+- 972 real products seen in the sales files of 28 Sep to 3 Oct 2026, with `on_hand` = the POS opening balance before 28 Sep.
+- 61 invented slow movers (codes `D0001` to `D0061`), same categories and units, never sold.
+- Prices: real where the POS had one, otherwise invented.
 
-## Run
-```
-npm install
-npm test          # 16 rule checks + file reader tests
-npm run build     # -> dist/
-npm run dev       # http://localhost:5173
-```
-## Deploy (GitHub Pages)
-1. Push to `main`. 2. Settings → Pages → Source: **GitHub Actions**. The workflow in `.github/workflows/deploy.yml` builds and publishes.
+Two demo routes (both end with the same stock):
+1. Upload `products_demo.xlsx` first, then the daily files in date order.
+2. Skip the list and upload only the daily files.
 
-## Demo logins
-Owner PIN `1111` (upload, review, reset). Staff PIN `2222` (search and view only).
-
-## Shared database (optional)
-Set `SUPABASE_URL` and `SUPABASE_ANON_KEY` (GitHub repository variables) and the app shares data across phones with real owner/staff rules enforced by the database. Steps: `supabase/SETUP.md`. Without them, data stays on each device.
-
-## Current limits
-- Without the Supabase variables, data is stored on this device only (IndexedDB).
-- No push notifications. Alerts, to-order list, count and write-off (M5) are not built yet.
-- Never commit real POS files (`.gitignore` blocks .xls).
-
-Docs: `docs/` (prd, AGENTS, architecture, schema, implementation-plan, progress).
+The daily POS files are customer data and are not in this repository.
